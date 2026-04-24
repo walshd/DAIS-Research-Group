@@ -4,6 +4,7 @@ import re
 
 import numpy as np
 import pandas as pd
+from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import NMF
 from sklearn.feature_extraction.text import CountVectorizer, ENGLISH_STOP_WORDS, TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -11,6 +12,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 FILE = "DAIS Research Group Survey_ Data & NLP Cluster Identity Mapping.xlsx"
 REPORT_FILE = "survey_question_summaries.md"
 THEME_EXTRACTION_MODE = "dynamic"
+COLLABORATION_CLUSTERS_FILE = "collaboration_subgroups.csv"
 
 QUESTION_COLUMNS = [
     "research_description",
@@ -39,6 +41,26 @@ QUESTION_LABELS = {
 }
 
 CATEGORICAL_COLUMNS = {"meeting_frequency"}
+DOMAIN_STOPWORDS = {
+    "research",
+    "data",
+    "language",
+    "ai",
+    "system",
+    "systems",
+    "analysis",
+    "approach",
+    "approaches",
+    "work",
+    "working",
+    "methods",
+    "method",
+    "model",
+    "models",
+}
+
+QUESTION_STOPWORDS = DOMAIN_STOPWORDS | {"cluster", "group", "topic", "topics"}
+
 NOISY_TERMS = {
     "yes",
     "using",
@@ -75,6 +97,7 @@ MEANINGFUL_UNIGRAM_ALLOWLIST = {
 }
 
 GENERIC_PHRASE_TOKENS = {
+    "yes",
     "work",
     "directly",
     "short",
@@ -116,6 +139,16 @@ DOMAIN_SIGNAL_TOKENS = {
     "publication",
     "funding",
     "collaboration",
+}
+
+CAPABILITY_MAP = {
+    "multimodal": "multimodal modelling capability",
+    "eeg": "biosignal analytics capability",
+    "cultural heritage": "digital heritage analytics capability",
+    "social media": "computational social data capability",
+    "education": "learning analytics capability",
+    "health": "health data modelling capability",
+    "healthcare": "health data modelling capability",
 }
 
 IDENTITY_TEXT_COLUMNS = [
@@ -328,6 +361,8 @@ def _pretty_term(term):
     pretty = padded.strip()
     if pretty == "natural language processing":
         return "NLP"
+    if pretty == "natural processing":
+        return "NLP and language processing"
     if pretty == "natural language":
         return "language"
     if pretty == "ai":
@@ -367,6 +402,8 @@ def _dedupe_related_terms(terms):
 
 def _concept_label(term):
     lower = term.lower()
+    if "natural processing" in lower:
+        return "NLP and language processing"
     if any(k in lower for k in ["machine learning", "deep learning", "predictive"]):
         return "machine and deep learning methods"
     if any(k in lower for k in ["language based", "data language"]):
@@ -427,8 +464,7 @@ def _build_pillars_from_dynamic_signals(signal_blocks):
             if not terms:
                 continue
             matches = sum(1 for kw in keywords if any(kw in term for term in terms))
-            match_ratio = matches / len(keywords)
-            weighted = match_ratio * signal["coverage"]
+            weighted = matches * signal["coverage"]
             best_score = max(best_score, weighted)
         pillars.append((pillar_name, PILLAR_TITLES[pillar_name], best_score))
     pillars.sort(key=lambda item: item[2], reverse=True)
@@ -470,8 +506,8 @@ def build_identity_synthesis_dynamic(df):
     if total_people == 0:
         return {"signals": [], "pillars": [], "total_people": 0, "mode": "dynamic"}
 
-    n_topics = min(4, max(2, total_people // 2))
-    dynamic_stop_words = set(ENGLISH_STOP_WORDS) | _build_name_stopwords(df)
+    n_topics = 2 if total_people <= 6 else 4
+    dynamic_stop_words = set(ENGLISH_STOP_WORDS) | _build_name_stopwords(df) | DOMAIN_STOPWORDS
     min_df = 2 if total_people >= 5 else 1
     vectorizer = TfidfVectorizer(
         stop_words=list(dynamic_stop_words),
@@ -637,11 +673,19 @@ def summarize_categorical_question(df, column, top_n=3):
     ]
 
     lead = top.index[0]
-    return (
+    summary = (
         f"Across {total} responses, the most common choice was {lead}. "
         f"The strongest preferences were {_format_top_items(highlights)}, "
         "so these should be treated as the highest-priority options in planning."
     )
+
+    if "Bi-weekly" in counts.index:
+        summary += (
+            " However, bi-weekly schedules are rarely sustainable for research clusters "
+            "and may reflect early enthusiasm rather than long-term preference."
+        )
+
+    return summary
 
 
 def summarize_text_question(df, column, top_n=5):
@@ -652,8 +696,13 @@ def summarize_text_question(df, column, top_n=5):
         return "No responses were provided for this question."
 
     min_df = 2 if total >= 5 else 1
-    vectorizer = CountVectorizer(stop_words="english", ngram_range=(1, 2), min_df=min_df)
-    matrix = vectorizer.fit_transform(values)
+    summary_stop_words = list(set(ENGLISH_STOP_WORDS) | QUESTION_STOPWORDS)
+    try:
+        vectorizer = CountVectorizer(stop_words=summary_stop_words, ngram_range=(2, 3), min_df=min_df)
+        matrix = vectorizer.fit_transform(values)
+    except ValueError:
+        vectorizer = CountVectorizer(stop_words=summary_stop_words, ngram_range=(1, 2), min_df=min_df)
+        matrix = vectorizer.fit_transform(values)
 
     terms = vectorizer.get_feature_names_out()
     doc_freq = np.asarray((matrix > 0).sum(axis=0)).ravel()
@@ -663,6 +712,12 @@ def summarize_text_question(df, column, top_n=5):
     terms = terms[keep_mask]
     doc_freq = doc_freq[keep_mask]
     term_freq = term_freq[keep_mask]
+
+    meaningful_mask = np.array([_is_meaningful_term(term) for term in terms]) if len(terms) else np.array([])
+    if len(meaningful_mask):
+        terms = terms[meaningful_mask]
+        doc_freq = doc_freq[meaningful_mask]
+        term_freq = term_freq[meaningful_mask]
 
     if len(terms) == 0:
         return (
@@ -682,7 +737,7 @@ def summarize_text_question(df, column, top_n=5):
         )
 
     top_themes = [
-        f"{terms[i]} ({doc_freq[i]}/{total} responses, {doc_freq[i] / total:.0%})"
+        f"{_pretty_term(terms[i])} ({doc_freq[i]}/{total} responses, {doc_freq[i] / total:.0%})"
         for i in top_idx
     ]
 
@@ -710,11 +765,12 @@ def _top_terms_from_columns(df, columns, top_n=4):
         return []
 
     min_df = 2 if total >= 5 else 1
+    summary_stop_words = list(set(ENGLISH_STOP_WORDS) | QUESTION_STOPWORDS)
     try:
-        vectorizer = CountVectorizer(stop_words="english", ngram_range=(2, 3), min_df=min_df)
+        vectorizer = CountVectorizer(stop_words=summary_stop_words, ngram_range=(2, 3), min_df=min_df)
         matrix = vectorizer.fit_transform(values)
     except ValueError:
-        vectorizer = CountVectorizer(stop_words="english", ngram_range=(1, 2), min_df=min_df)
+        vectorizer = CountVectorizer(stop_words=summary_stop_words, ngram_range=(1, 2), min_df=min_df)
         matrix = vectorizer.fit_transform(values)
 
     terms = vectorizer.get_feature_names_out()
@@ -803,7 +859,65 @@ def generate_question_paragraphs(df):
     return paragraphs
 
 
-def write_summary_report(paragraphs, identity_synthesis, group_identity_paragraph):
+def cross_question_theme_strength(df, top_n=10):
+    combined = df[QUESTION_COLUMNS].fillna("").astype(str).agg(" ".join, axis=1)
+    combined = _clean_text_series(combined)
+    if len(combined) == 0:
+        return []
+
+    stop_words = list(set(ENGLISH_STOP_WORDS) | QUESTION_STOPWORDS)
+    vectorizer = TfidfVectorizer(stop_words=stop_words, ngram_range=(2, 3), min_df=2)
+    try:
+        matrix = vectorizer.fit_transform(combined)
+    except ValueError:
+        return []
+
+    scores = matrix.mean(axis=0).A1
+    terms = vectorizer.get_feature_names_out()
+    ranked = sorted(zip(terms, scores), key=lambda item: item[1], reverse=True)
+    ranked = [(term, score) for term, score in ranked if _is_meaningful_term(term)]
+    return ranked[:top_n]
+
+
+def extract_capability_coverage(df):
+    combined = df[QUESTION_COLUMNS].fillna("").astype(str).agg(" ".join, axis=1).map(_normalise_text)
+    total = len(combined)
+    if total == 0:
+        return []
+
+    capability_hits = {}
+    for keyword, capability in CAPABILITY_MAP.items():
+        pattern = rf"(?<!\w){re.escape(keyword)}(?!\w)" if " " in keyword else rf"\b{re.escape(keyword)}\b"
+        covered = int(sum(bool(re.search(pattern, text)) for text in combined))
+        if covered > 0:
+            current = capability_hits.get(capability, 0)
+            capability_hits[capability] = max(current, covered)
+
+    ranked = sorted(capability_hits.items(), key=lambda item: item[1], reverse=True)
+    return [(capability, count, total) for capability, count in ranked]
+
+
+def detect_collaboration_clusters(similarity_df):
+    if len(similarity_df.index) < 2:
+        return pd.Series([0] * len(similarity_df.index), index=similarity_df.index, name="cluster")
+
+    distance = 1 - similarity_df.values
+    np.fill_diagonal(distance, 0)
+    n_clusters = 2 if len(similarity_df.index) >= 2 else 1
+
+    clustering = AgglomerativeClustering(metric="precomputed", linkage="average", n_clusters=n_clusters)
+    labels = clustering.fit_predict(distance)
+    return pd.Series(labels, index=similarity_df.index, name="cluster")
+
+
+def write_summary_report(
+    paragraphs,
+    identity_synthesis,
+    group_identity_paragraph,
+    cross_themes,
+    capability_coverage,
+    collaboration_clusters,
+):
     mode_text = "dynamic topic modelling" if identity_synthesis.get("mode") == "dynamic" else "predefined thematic dictionaries"
     lines = [
         "# DAIS Survey Summary (Reproducible)",
@@ -840,7 +954,34 @@ def write_summary_report(paragraphs, identity_synthesis, group_identity_paragrap
     lines.append("## Candidate Research Pillars")
     lines.append("")
     for pillar_name, pillar_label, strength in identity_synthesis["pillars"]:
-        lines.append(f"- {pillar_name}: {pillar_label} (support score: {strength:.0%})")
+        lines.append(f"- {pillar_name}: {pillar_label} (support score: {strength:.2f})")
+    lines.append("")
+
+    lines.append("## Cross-question Backbone Themes")
+    lines.append("")
+    if cross_themes:
+        for term, score in cross_themes:
+            lines.append(f"- {_pretty_term(term)} (mean TF-IDF score: {score:.3f})")
+    else:
+        lines.append("- No stable cross-question themes met the minimum support threshold.")
+    lines.append("")
+
+    lines.append("## Capability Coverage")
+    lines.append("")
+    if capability_coverage:
+        for capability, count, total in capability_coverage:
+            lines.append(f"- {capability} ({count}/{total}, {count / total:.0%})")
+    else:
+        lines.append("- No capability markers were detected.")
+    lines.append("")
+
+    lines.append("## Collaboration Subgroups")
+    lines.append("")
+    if len(collaboration_clusters.index) > 0:
+        for member, label in collaboration_clusters.items():
+            lines.append(f"- {member}: subgroup {int(label)}")
+    else:
+        lines.append("- No subgroup information available.")
     lines.append("")
 
     lines.append("## Per-question Summaries")
@@ -858,10 +999,19 @@ def write_summary_report(paragraphs, identity_synthesis, group_identity_paragrap
 
 
 def similarity_matrix(df):
-    vectorizer = CountVectorizer(stop_words="english")
+    similarity_stop_words = list(set(ENGLISH_STOP_WORDS) | DOMAIN_STOPWORDS)
+    vectorizer = TfidfVectorizer(stop_words=similarity_stop_words, ngram_range=(2, 3), min_df=1)
 
     text = df["research_description"].fillna("") + " " + df["cluster_connection"].fillna("")
     tf = vectorizer.fit_transform(text)
+
+    if tf.shape[1] > 0:
+        sim_probe = cosine_similarity(tf)
+        if len(sim_probe) > 1:
+            off_diag_mean = (sim_probe.sum() - np.trace(sim_probe)) / (sim_probe.size - len(sim_probe))
+            if off_diag_mean < 0.02:
+                vectorizer = TfidfVectorizer(stop_words=similarity_stop_words, ngram_range=(1, 2), min_df=1)
+                tf = vectorizer.fit_transform(text)
 
     similarity = cosine_similarity(tf)
     similarity_df = pd.DataFrame(similarity, index=df["name"], columns=df["name"])
@@ -876,9 +1026,21 @@ def main():
     paragraphs = generate_question_paragraphs(df)
     identity_synthesis = build_identity_synthesis(df)
     group_identity_paragraph = generate_group_identity_paragraph(df, identity_synthesis)
-    write_summary_report(paragraphs, identity_synthesis, group_identity_paragraph)
+    cross_themes = cross_question_theme_strength(df)
+    capability_coverage = extract_capability_coverage(df)
 
     similarity_df = similarity_matrix(df)
+    collaboration_clusters = detect_collaboration_clusters(similarity_df)
+    collaboration_clusters.to_csv(COLLABORATION_CLUSTERS_FILE)
+
+    write_summary_report(
+        paragraphs,
+        identity_synthesis,
+        group_identity_paragraph,
+        cross_themes,
+        capability_coverage,
+        collaboration_clusters,
+    )
 
     print("\n--- SURVEY QUESTION SUMMARIES ---")
     for column in QUESTION_COLUMNS:
@@ -898,9 +1060,18 @@ def main():
         )
     print("\n--- CANDIDATE RESEARCH PILLARS ---")
     for pillar_name, pillar_label, strength in identity_synthesis["pillars"]:
-        print(f"{pillar_name}: {pillar_label} ({strength:.0%})")
+        print(f"{pillar_name}: {pillar_label} ({strength:.2f})")
+    print("\n--- CROSS-QUESTION BACKBONE THEMES ---")
+    for term, score in cross_themes:
+        print(f"{_pretty_term(term)} ({score:.3f})")
+    print("\n--- CAPABILITY COVERAGE ---")
+    for capability, count, total in capability_coverage:
+        print(f"{capability}: {count}/{total} ({count / total:.0%})")
+    print("\n--- COLLABORATION SUBGROUPS ---")
+    print(collaboration_clusters)
     print(f"\nSaved summary report to: {REPORT_FILE}")
     print("Saved similarity matrix to: research_similarity_matrix.csv")
+    print(f"Saved collaboration subgroups to: {COLLABORATION_CLUSTERS_FILE}")
 
 
 if __name__ == "__main__":
