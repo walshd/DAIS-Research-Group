@@ -4,7 +4,6 @@ import re
 
 import numpy as np
 import pandas as pd
-from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import NMF
 from sklearn.feature_extraction.text import CountVectorizer, ENGLISH_STOP_WORDS, TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -12,7 +11,6 @@ from sklearn.metrics.pairwise import cosine_similarity
 FILE = "DAIS Research Group Survey_ Data & NLP Cluster Identity Mapping.xlsx"
 REPORT_FILE = "survey_question_summaries.md"
 THEME_EXTRACTION_MODE = "dynamic"
-COLLABORATION_CLUSTERS_FILE = "collaboration_subgroups.csv"
 
 QUESTION_COLUMNS = [
     "research_description",
@@ -897,26 +895,12 @@ def extract_capability_coverage(df):
     return [(capability, count, total) for capability, count in ranked]
 
 
-def detect_collaboration_clusters(similarity_df):
-    if len(similarity_df.index) < 2:
-        return pd.Series([0] * len(similarity_df.index), index=similarity_df.index, name="cluster")
-
-    distance = 1 - similarity_df.values
-    np.fill_diagonal(distance, 0)
-    n_clusters = 2 if len(similarity_df.index) >= 2 else 1
-
-    clustering = AgglomerativeClustering(metric="precomputed", linkage="average", n_clusters=n_clusters)
-    labels = clustering.fit_predict(distance)
-    return pd.Series(labels, index=similarity_df.index, name="cluster")
-
-
 def write_summary_report(
     paragraphs,
     identity_synthesis,
     group_identity_paragraph,
     cross_themes,
     capability_coverage,
-    collaboration_clusters,
 ):
     mode_text = "dynamic topic modelling" if identity_synthesis.get("mode") == "dynamic" else "predefined thematic dictionaries"
     lines = [
@@ -975,15 +959,6 @@ def write_summary_report(
         lines.append("- No capability markers were detected.")
     lines.append("")
 
-    lines.append("## Collaboration Subgroups")
-    lines.append("")
-    if len(collaboration_clusters.index) > 0:
-        for member, label in collaboration_clusters.items():
-            lines.append(f"- {member}: subgroup {int(label)}")
-    else:
-        lines.append("- No subgroup information available.")
-    lines.append("")
-
     lines.append("## Per-question Summaries")
     lines.append("")
 
@@ -1030,8 +1005,6 @@ def main():
     capability_coverage = extract_capability_coverage(df)
 
     similarity_df = similarity_matrix(df)
-    collaboration_clusters = detect_collaboration_clusters(similarity_df)
-    collaboration_clusters.to_csv(COLLABORATION_CLUSTERS_FILE)
 
     write_summary_report(
         paragraphs,
@@ -1039,7 +1012,6 @@ def main():
         group_identity_paragraph,
         cross_themes,
         capability_coverage,
-        collaboration_clusters,
     )
 
     print("\n--- SURVEY QUESTION SUMMARIES ---")
@@ -1067,11 +1039,8 @@ def main():
     print("\n--- CAPABILITY COVERAGE ---")
     for capability, count, total in capability_coverage:
         print(f"{capability}: {count}/{total} ({count / total:.0%})")
-    print("\n--- COLLABORATION SUBGROUPS ---")
-    print(collaboration_clusters)
     print(f"\nSaved summary report to: {REPORT_FILE}")
     print("Saved similarity matrix to: research_similarity_matrix.csv")
-    print(f"Saved collaboration subgroups to: {COLLABORATION_CLUSTERS_FILE}")
 
 
 if __name__ == "__main__":
