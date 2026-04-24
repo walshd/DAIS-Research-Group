@@ -53,15 +53,6 @@ Evidence terms: digital cultural heritage applications and human–AI interactio
 - learning analytics capability (2/6, 33%)
 - computational social data capability (1/6, 17%)
 
-## Collaboration Subgroups
-
-- David Walsh: subgroup 0
-- Nonso Nnamoko: subgroup 0
-- Hafeez Ullah Amin: subgroup 0
-- Dan Campbell: subgroup 1
-- Ghada Nakhla: subgroup 0
-- Yannis Korkontzelos: subgroup 0
-
 ## Per-question Summaries
 
 ## What best describes your current research area and methods?
