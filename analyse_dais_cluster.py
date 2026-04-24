@@ -51,6 +51,73 @@ NOISY_TERMS = {
     "particularly",
 }
 
+LOW_SIGNAL_UNIGRAMS = {
+    "large",
+    "support",
+    "interested",
+    "systems",
+    "research",
+    "data",
+    "language",
+    "machine",
+    "development",
+    "analysis",
+}
+
+MEANINGFUL_UNIGRAM_ALLOWLIST = {
+    "nlp",
+    "ai",
+    "eeg",
+    "llm",
+    "ethics",
+    "healthcare",
+    "education",
+}
+
+GENERIC_PHRASE_TOKENS = {
+    "work",
+    "directly",
+    "short",
+    "large",
+    "using",
+    "need",
+    "would",
+    "like",
+    "support",
+    "focused",
+    "specific",
+    "theme",
+}
+
+DOMAIN_SIGNAL_TOKENS = {
+    "ai",
+    "nlp",
+    "llm",
+    "language",
+    "linguistic",
+    "data",
+    "machine",
+    "learning",
+    "model",
+    "modelling",
+    "interaction",
+    "human",
+    "multimodal",
+    "eeg",
+    "signal",
+    "heritage",
+    "cultural",
+    "health",
+    "healthcare",
+    "education",
+    "policy",
+    "evaluation",
+    "ethics",
+    "publication",
+    "funding",
+    "collaboration",
+}
+
 IDENTITY_TEXT_COLUMNS = [
     "research_description",
     "publications",
@@ -234,6 +301,100 @@ def _format_top_items(items):
     return ", ".join(items[:-1]) + f", and {items[-1]}"
 
 
+def _is_meaningful_term(term):
+    tokens = term.split()
+    if len(tokens) > 1:
+        if any(token in GENERIC_PHRASE_TOKENS for token in tokens):
+            return False
+        return any(token in DOMAIN_SIGNAL_TOKENS for token in tokens)
+    if " " in term:
+        return True
+    if term in MEANINGFUL_UNIGRAM_ALLOWLIST:
+        return True
+    if term in LOW_SIGNAL_UNIGRAMS:
+        return False
+    return len(term) >= 6
+
+
+def _filter_meaningful_terms(terms):
+    return [term for term in terms if _is_meaningful_term(term)]
+
+
+def _pretty_term(term):
+    replacements = {" ai ": " AI ", " nlp ": " NLP ", " llm ": " LLM "}
+    padded = f" {term} "
+    for source, target in replacements.items():
+        padded = padded.replace(source, target)
+    pretty = padded.strip()
+    if pretty == "natural language processing":
+        return "NLP"
+    if pretty == "natural language":
+        return "language"
+    if pretty == "ai":
+        return "AI"
+    if pretty == "nlp":
+        return "NLP"
+    if pretty == "llm":
+        return "LLM"
+    return pretty
+
+
+def _dedupe_related_terms(terms):
+    if not terms:
+        return []
+    pretty_terms = [_pretty_term(term) for term in terms]
+
+    if "NLP" in pretty_terms:
+        pretty_terms = [
+            term for term in pretty_terms
+            if term not in {"language processing", "natural language processing", "language"}
+            or term == "NLP"
+        ]
+
+    if "digital cultural heritage" in pretty_terms:
+        pretty_terms = [
+            term for term in pretty_terms
+            if term not in {"cultural heritage", "digital cultural"}
+            or term == "digital cultural heritage"
+        ]
+
+    deduped = []
+    for term in pretty_terms:
+        if term not in deduped:
+            deduped.append(term)
+    return deduped
+
+
+def _concept_label(term):
+    lower = term.lower()
+    if any(k in lower for k in ["machine learning", "deep learning", "predictive"]):
+        return "machine and deep learning methods"
+    if any(k in lower for k in ["language based", "data language"]):
+        return "language-enabled AI methods"
+    if any(k in lower for k in ["nlp", "language processing", "natural language", "language based"]):
+        return "NLP and language processing"
+    if any(k in lower for k in ["human interaction", "interpretation", "evaluation", "human ai", "ai systems"]):
+        return "human–AI interaction and evaluation"
+    if any(k in lower for k in ["data ai", "data driven", "data analysis", "data nlp"]):
+        return "data-driven AI analysis"
+    if any(k in lower for k in ["funding", "joint publications", "research introductions"]):
+        return "collaborative planning, funding, and joint outputs"
+    if any(k in lower for k in ["cultural heritage", "digital cultural"]):
+        return "digital cultural heritage applications"
+    return _pretty_term(term)
+
+
+def _summarise_concepts(items, limit=3):
+    if not items:
+        return ""
+    concepts = []
+    for term, _, _ in items:
+        label = _concept_label(term)
+        if label not in concepts:
+            concepts.append(label)
+    return _format_top_items(concepts[:limit])
+
+
 def _normalise_text(text):
     clean = re.sub(r"\s+", " ", str(text).strip().lower())
     return clean
@@ -275,7 +436,7 @@ def _build_pillars_from_dynamic_signals(signal_blocks):
 
 
 def _generate_dynamic_signal_narrative(title, top_terms):
-    terms_text = _format_top_items(top_terms[:4])
+    terms_text = _format_top_items([_concept_label(t) for t in top_terms[:4]])
     return (
         f"This emergent theme is characterised by repeated references to {terms_text}, "
         "indicating a coherent shared direction across contributors."
@@ -314,14 +475,23 @@ def build_identity_synthesis_dynamic(df):
     min_df = 2 if total_people >= 5 else 1
     vectorizer = TfidfVectorizer(
         stop_words=list(dynamic_stop_words),
-        ngram_range=(1, 2),
+        ngram_range=(2, 3),
         min_df=min_df,
         max_df=0.9,
     )
     try:
         tfidf = vectorizer.fit_transform(combined)
     except ValueError:
-        return {"signals": [], "pillars": [], "total_people": total_people, "mode": "dynamic"}
+        vectorizer = TfidfVectorizer(
+            stop_words=list(dynamic_stop_words),
+            ngram_range=(1, 2),
+            min_df=min_df,
+            max_df=0.9,
+        )
+        try:
+            tfidf = vectorizer.fit_transform(combined)
+        except ValueError:
+            return {"signals": [], "pillars": [], "total_people": total_people, "mode": "dynamic"}
 
     if tfidf.shape[1] < 2:
         return {"signals": [], "pillars": [], "total_people": total_people, "mode": "dynamic"}
@@ -340,6 +510,8 @@ def build_identity_synthesis_dynamic(df):
     for topic_idx in range(n_topics):
         top_term_idx = np.argsort(topic_terms[topic_idx])[::-1][:8]
         top_terms = [features[i] for i in top_term_idx if topic_terms[topic_idx][i] > 0]
+        top_terms = _filter_meaningful_terms(top_terms)
+        top_terms = _dedupe_related_terms(top_terms)
 
         if not top_terms:
             continue
@@ -348,7 +520,13 @@ def build_identity_synthesis_dynamic(df):
         covered = int(np.sum(coverage_mask))
         coverage = covered / total_people if total_people else 0
 
-        evidence_terms = top_terms[:5]
+        evidence_terms_raw = top_terms[:5]
+        evidence_terms = []
+        for term in evidence_terms_raw:
+            label = _concept_label(term)
+            if label not in evidence_terms:
+                evidence_terms.append(label)
+
         evidence_text = _format_top_items([f"{term}" for term in evidence_terms])
         title = f"Emergent theme: {_format_top_items(evidence_terms[:3])}"
 
@@ -532,8 +710,12 @@ def _top_terms_from_columns(df, columns, top_n=4):
         return []
 
     min_df = 2 if total >= 5 else 1
-    vectorizer = CountVectorizer(stop_words="english", ngram_range=(1, 2), min_df=min_df)
-    matrix = vectorizer.fit_transform(values)
+    try:
+        vectorizer = CountVectorizer(stop_words="english", ngram_range=(2, 3), min_df=min_df)
+        matrix = vectorizer.fit_transform(values)
+    except ValueError:
+        vectorizer = CountVectorizer(stop_words="english", ngram_range=(1, 2), min_df=min_df)
+        matrix = vectorizer.fit_transform(values)
 
     terms = vectorizer.get_feature_names_out()
     doc_freq = np.asarray((matrix > 0).sum(axis=0)).ravel()
@@ -543,6 +725,13 @@ def _top_terms_from_columns(df, columns, top_n=4):
     terms = terms[keep_mask]
     doc_freq = doc_freq[keep_mask]
     term_freq = term_freq[keep_mask]
+
+    meaningful_mask = np.array([_is_meaningful_term(term) for term in terms]) if len(terms) else np.array([])
+    if len(meaningful_mask):
+        terms = terms[meaningful_mask]
+        doc_freq = doc_freq[meaningful_mask]
+        term_freq = term_freq[meaningful_mask]
+
     if len(terms) == 0:
         return []
 
@@ -554,7 +743,7 @@ def _top_terms_from_columns(df, columns, top_n=4):
 def _format_term_with_share(items):
     if not items:
         return ""
-    formatted = [f"{term} ({count}/{total}, {count / total:.0%})" for term, count, total in items]
+    formatted = [f"{_pretty_term(term)} ({count}/{total}, {count / total:.0%})" for term, count, total in items]
     return _format_top_items(formatted)
 
 
@@ -575,18 +764,25 @@ def generate_group_identity_paragraph(df, identity_synthesis):
     else:
         frequency_text = "no clear preferred cadence"
 
-    top_signals = identity_synthesis.get("signals", [])[:2]
-    if top_signals:
-        signal_text = _format_top_items([
-            f"{signal['title'].replace('Emergent theme: ', '').lower()} ({signal['covered']}/{signal['total']}, {signal['coverage']:.0%})"
-            for signal in top_signals
-        ])
+    signal_bits = []
+    seen_signal_labels = set()
+    for signal in identity_synthesis.get("signals", []):
+        label = _concept_label(signal["title"].replace("Emergent theme: ", "").lower())
+        if label in seen_signal_labels:
+            continue
+        seen_signal_labels.add(label)
+        signal_bits.append(f"{label} ({signal['covered']}/{signal['total']}, {signal['coverage']:.0%})")
+        if len(signal_bits) == 2:
+            break
+
+    if signal_bits:
+        signal_text = _format_top_items(signal_bits)
     else:
         signal_text = "no dominant cross-question identity signals"
 
-    methods_text = _format_term_with_share(methods) if methods else "diverse but related methodological approaches"
-    future_text = _format_term_with_share(future) if future else "a broad agenda for future research"
-    collaboration_text = _format_term_with_share(collaboration) if collaboration else "shared interest in collaboration and planning"
+    methods_text = _summarise_concepts(methods) if methods else "diverse but related methodological approaches"
+    future_text = _summarise_concepts(future) if future else "a broad agenda for future research"
+    collaboration_text = _summarise_concepts(collaboration) if collaboration else "shared interest in collaboration and planning"
 
     return (
         f"Across {total_members} contributors, the group presents a coherent identity with strongest shared signals in {signal_text}. "

@@ -10,32 +10,32 @@ Across responses, the strongest overlap appears at the methodological and human-
 
 ## Group Identity Paragraph
 
-Across 6 contributors, the group presents a coherent identity with strongest shared signals in data, analysis, and learning (4/6, 67%) and systems, support, and large (3/6, 50%). Methodologically, responses repeatedly emphasise research (6/6, 100%), language (6/6, 100%), data (5/6, 83%), and machine (5/6, 83%), indicating a data- and language-oriented research core. Future priorities are concentrated around ai (5/6, 83%), interaction (5/6, 83%), data (4/6, 67%), and systems (4/6, 67%), while members describe collaboration needs around research (4/6, 67%), planning (4/6, 67%), opportunities (3/6, 50%), and funding (3/6, 50%). Operationally, the preferred meeting cadence clusters around Bi-weekly (3/6, 50%) and Bi-monthly (2/6, 33%), supporting a regular and action-focused community model.
+Across 6 contributors, the group presents a coherent identity with strongest shared signals in machine and deep learning methods (3/6, 50%) and human–AI interaction and evaluation (2/6, 33%). Methodologically, responses repeatedly emphasise NLP and language processing and machine and deep learning methods, indicating a data- and language-oriented research core. Future priorities are concentrated around human–AI interaction and evaluation and data-driven AI analysis, while members describe collaboration needs around collaborative planning, funding, and joint outputs. Operationally, the preferred meeting cadence clusters around Bi-weekly (3/6, 50%) and Bi-monthly (2/6, 33%), supporting a regular and action-focused community model.
 
-### 1. Emergent theme: data, analysis, and learning
+### 1. Emergent theme: machine and deep learning methods, NLP and language processing, and data-driven AI analysis
 
-Coverage: 4/6 responses (67%). This emergent theme is characterised by repeated references to data, analysis, learning, and human, indicating a coherent shared direction across contributors.
+Coverage: 3/6 responses (50%). This emergent theme is characterised by repeated references to machine and deep learning methods, NLP and language processing, data-driven AI analysis, and multimodal data, indicating a coherent shared direction across contributors.
 
-Evidence terms: data, analysis, learning, human, and processing.
+Evidence terms: machine and deep learning methods, NLP and language processing, data-driven AI analysis, multimodal data, and human–AI interaction and evaluation.
 
-### 2. Emergent theme: systems, support, and large
+### 2. Emergent theme: data-driven AI analysis, machine and deep learning methods, and language-enabled AI methods
 
-Coverage: 3/6 responses (50%). This emergent theme is characterised by repeated references to systems, support, large, and evaluation, indicating a coherent shared direction across contributors.
+Coverage: 3/6 responses (50%). This emergent theme is characterised by repeated references to data-driven AI analysis, machine and deep learning methods, and language-enabled AI methods, indicating a coherent shared direction across contributors.
 
-Evidence terms: systems, support, large, evaluation, and data.
+Evidence terms: data-driven AI analysis, machine and deep learning methods, and language-enabled AI methods.
 
-### 3. Emergent theme: development, projects, and cultural heritage
+### 3. Emergent theme: digital cultural heritage applications and human–AI interaction and evaluation
 
-Coverage: 1/6 responses (17%). This emergent theme is characterised by repeated references to development, projects, cultural heritage, and cultural, indicating a coherent shared direction across contributors.
+Coverage: 2/6 responses (33%). This emergent theme is characterised by repeated references to digital cultural heritage applications and human–AI interaction and evaluation, indicating a coherent shared direction across contributors.
 
-Evidence terms: development, projects, cultural heritage, cultural, and heritage.
+Evidence terms: digital cultural heritage applications and human–AI interaction and evaluation.
 
 ## Candidate Research Pillars
 
-- Pillar 1: Multimodal intelligent data analysis (support score: 17%)
-- Pillar 3: Human interpretation, interaction, and evaluation of AI systems (support score: 11%)
-- Pillar 4: Applied intelligent systems in complex human domains (support score: 2%)
-- Pillar 2: Language-centred AI and NLP methods (support score: 0%)
+- Pillar 3: Human interpretation, interaction, and evaluation of AI systems (support score: 25%)
+- Pillar 1: Multimodal intelligent data analysis (support score: 19%)
+- Pillar 2: Language-centred AI and NLP methods (support score: 7%)
+- Pillar 4: Applied intelligent systems in complex human domains (support score: 5%)
 
 ## Per-question Summaries
 
